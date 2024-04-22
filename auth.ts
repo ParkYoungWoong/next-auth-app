@@ -1,40 +1,20 @@
 import NextAuth from 'next-auth'
-import Credentials from 'next-auth/providers/credentials'
-import { CredentialsSignin } from 'next-auth'
+import Google from 'next-auth/providers/google'
 
-interface UserInfo {
-  username?: string
-  email: string
-  password: string
-}
 interface ResponseValue {
   user: {
-    email: string // 사용자 이메일
-    displayName: string // 사용자 표시 이름
-    profileImg: string | null // 사용자 프로필 이미지(URL)
+    email: string
+    displayName: string
+    profileImg: string | null
   }
-  accessToken: string // 사용자 접근 토큰
+  accessToken: string
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
-    Credentials({
-      authorize: async credentials => {
-        const userInfo = credentials as unknown as UserInfo
-        return {
-          id: '',
-          name: userInfo.username,
-          ...userInfo
-        }
-
-        // 회원가입
-        if (userInfo.username) {
-          return _signIn('signup', userInfo)
-        }
-
-        // 로그인
-        return _signIn('login', userInfo)
-      }
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET
     })
   ],
   session: {
@@ -45,7 +25,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: '/signin'
   },
   callbacks: {
-    signIn: async () => {
+    signIn: async ({ account, profile, user }) => {
+      if (account?.provider === 'google') {
+        try {
+          const type = (await _existUser(user.email as string))
+            ? 'login'
+            : 'signup'
+          const _user = await _signIn(type, {
+            token: account.access_token as string,
+            email: profile?.email as string,
+            expires: profile?.exp as string
+          })
+          user.accessToken = _user.accessToken
+        } catch (error) {
+          if (error instanceof Error) {
+            return `/error?message=${encodeURIComponent(error.message)}`
+          }
+        }
+        return !!profile?.email_verified
+      }
       return true
     },
     jwt: async ({ token, user }) => {
@@ -59,27 +57,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.accessToken = token.accessToken
       }
       return session
-    },
-    redirect: async ({ url, baseUrl }) => {
-      console.log('Redirect:', url, baseUrl)
-      if (url.startsWith('/')) return `${baseUrl}${url}`
-      if (url) {
-        const { search, origin } = new URL(url)
-        const callbackUrl = new URLSearchParams(search).get('callbackUrl')
-        if (callbackUrl) return callbackUrl
-        if (origin === baseUrl) return url
-      }
-      return baseUrl
     }
   }
 })
 
-// 내부 서비스 서버에서 회원가입 및 로그인하는 함수
+// 사용자 확인
+async function _existUser(email: string) {
+  const res = await fetch(`https://api.heropy.dev/auth/exist`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: process.env.API_KEY as string
+    },
+    body: JSON.stringify({ email })
+  })
+  return (await res.json()) as boolean
+}
+
+// 회원가입 또는 로그인
 async function _signIn(
   type: 'signup' | 'login',
-  body: { username?: string; email: string; password: string }
+  body: { email: string; token: string; expires: string }
 ) {
-  const res = await fetch(`https://api.heropy.dev/auth/${type}`, {
+  const res = await fetch(`https://api.heropy.dev/oauth/${type}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -92,7 +92,6 @@ async function _signIn(
   if (res.ok && typeof data !== 'string') {
     const { user, accessToken } = data
     return {
-      id: user.email,
       email: user.email,
       name: user.displayName,
       image: user.profileImg,
@@ -100,7 +99,7 @@ async function _signIn(
     }
   }
 
-  throw new CredentialsSignin({
-    cause: data || '문제가 발생했습니다, 잠시 후 다시 시도하세요.'
-  })
+  throw new Error(
+    (data as string) || '문제가 발생했습니다, 잠시 후 다시 시도하세요.'
+  )
 }
