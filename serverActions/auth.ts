@@ -11,7 +11,7 @@ export const signInWithCredentials = async (
     await signIn('credentials', {
       username: formData.get('username'),
       email: formData.get('email'),
-      passwor: formData.get('password')
+      password: formData.get('password')
     })
   } catch (error) {
     if (error instanceof CredentialsSignin) {

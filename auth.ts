@@ -21,11 +21,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Credentials({
       authorize: async credentials => {
         const userInfo = credentials as unknown as UserInfo
-        return {
-          id: '',
-          name: userInfo.username,
-          ...userInfo
-        }
+        // return {
+        //   id: '',
+        //   name: userInfo.username,
+        //   ...userInfo
+        // }
 
         // 회원가입
         if (userInfo.username) {
