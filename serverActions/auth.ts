@@ -1,5 +1,5 @@
 'use server'
-import { auth, signIn, signOut } from '@/auth'
+import { auth, signIn, signOut, update } from '@/auth'
 
 export const signInWithGoogle = async () => {
   await signIn('google', { redirectTo: '/' })
@@ -7,4 +7,4 @@ export const signInWithGoogle = async () => {
 export const signOutWithForm = async (formData: FormData) => {
   return await signOut()
 }
-export { auth }
+export { auth as getSession, update as updateSession }

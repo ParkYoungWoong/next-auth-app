@@ -10,16 +10,27 @@ interface ResponseValue {
   accessToken: string
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const {
+  handlers,
+  signIn,
+  signOut,
+  auth,
+  unstable_update: update
+} = NextAuth({
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+      authorization: {
+        params: {
+          prompt: 'consent' // 사용자에게 항상 동의 화면을 표시하도록 강제!
+        }
+      }
     })
   ],
   session: {
     strategy: 'jwt',
-    maxAge: 60 * 60 * 24 // 1 day
+    maxAge: 60 * 60 * 24 // 24시간
   },
   pages: {
     signIn: '/signin'
@@ -28,15 +39,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: async ({ account, profile, user }) => {
       if (account?.provider === 'google') {
         try {
+          // 사용자 확인
           const type = (await _existUser(user.email as string))
             ? 'login'
             : 'signup'
+          // 회원가입 또는 로그인
           const _user = await _signIn(type, {
-            token: account.access_token as string,
-            email: profile?.email as string,
-            expires: profile?.exp as string
+            displayName: user.name as string,
+            email: user.email as string,
+            profileImg: user.image as string
           })
-          user.accessToken = _user.accessToken
+          Object.assign(user, _user) // jwt 콜백의 user 속성과 병합
         } catch (error) {
           if (error instanceof Error) {
             return `/error?message=${encodeURIComponent(error.message)}`
@@ -46,16 +59,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return true
     },
-    jwt: async ({ token, user }) => {
-      if (user) {
-        token.accessToken = user.accessToken
+    jwt: async ({ token, user, trigger, session }) => {
+      token = { ...token, ...user }
+      if (trigger === 'update' && session) {
+        token = { ...token, ...session.user }
       }
       return token
     },
     session: async ({ session, token }) => {
-      if (typeof token.accessToken === 'string') {
-        session.accessToken = token.accessToken
-      }
+      session = { ...session, ...token }
       return session
     }
   }
@@ -63,30 +75,40 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
 // 사용자 확인
 async function _existUser(email: string) {
-  const res = await fetch(`https://api.heropy.dev/auth/exist`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: process.env.API_KEY as string
-    },
-    body: JSON.stringify({ email })
-  })
+  const res = await fetch(
+    `https://asia-northeast3-heropy-api.cloudfunctions.net/api/auth/exists`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: process.env.HEROPY_API_KEY as string,
+        username: 'KDT8_ParkYoungWoong',
+        email
+      },
+      cache: 'no-store'
+    }
+  )
   return (await res.json()) as boolean
 }
 
 // 회원가입 또는 로그인
 async function _signIn(
   type: 'signup' | 'login',
-  body: { email: string; token: string; expires: string }
+  body: { email: string; displayName?: string; profileImg?: string }
 ) {
-  const res = await fetch(`https://api.heropy.dev/oauth/${type}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: process.env.API_KEY as string
-    },
-    body: JSON.stringify(body)
-  })
+  const res = await fetch(
+    `https://asia-northeast3-heropy-api.cloudfunctions.net/api/auth/oauth/${type}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: process.env.HEROPY_API_KEY as string,
+        username: 'KDT8_ParkYoungWoong'
+      },
+      body: JSON.stringify(body),
+      cache: 'no-store'
+    }
+  )
   const data = (await res.json()) as ResponseValue | string
 
   if (res.ok && typeof data !== 'string') {
